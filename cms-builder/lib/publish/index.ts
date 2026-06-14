@@ -6,11 +6,8 @@ import { PageSchema } from "@/lib/schema";
 import { diffPages, pagesEqual } from "./diff";
 import { bumpVersion } from "./version";
 import { formatChangelog } from "./changelog";
-import {
-  readLatestLocalSnapshot,
-  writeLocalSnapshot,
-  type SnapshotFile,
-} from "./snapshot";
+import { writeLocalSnapshot, type SnapshotFile } from "./snapshot";
+import { ensureReleaseContentType } from "@/lib/contentful/ensureReleaseContentType";
 import {
   createReleaseEntry,
   getLatestRelease,
@@ -25,23 +22,22 @@ export interface PublishOutcome {
 }
 
 /**
- * Resolve "what is the current latest release for this slug?" Prefers
- * Contentful (durable, multi-host) and falls back to local snapshots so
- * the dev loop works without a CMA round-trip.
+ * Resolve "what is the current latest release for this slug?"
+ *
+ * Contentful is the single source of truth for versioned state. We don't
+ * fall back to the local FS for the diff — that would let two devs disagree
+ * on what "the latest" is, and would make publishes succeed locally while
+ * silently drifting from prod.
+ *
+ * The FS snapshot is still written (immutable archive, per brief), but it
+ * is never used for read-side decisions.
  */
 async function resolveLatest(
   slug: string
 ): Promise<{ version: string; snapshot: Page } | null> {
-  try {
-    const remote = await getLatestRelease(slug);
-    if (remote) return remote;
-  } catch (e) {
-    // Don't fail publish if CMA list endpoint is unavailable; fall back to FS.
-    console.warn("[publish] getLatestRelease failed; falling back to FS:", e);
-  }
-  const local = await readLatestLocalSnapshot(slug);
-  if (!local) return null;
-  return { version: local.version, snapshot: local.snapshot };
+  const remote = await getLatestRelease(slug);
+  if (!remote) return null;
+  return { version: remote.version, snapshot: remote.snapshot };
 }
 
 /**
@@ -67,6 +63,11 @@ export async function publish(
       `Draft slug "${draft.slug}" does not match request slug "${slug}"`
     );
   }
+
+  // Make sure the `release` content type is present and complete in
+  // Contentful before we try to use it. First publish in a fresh space
+  // creates and activates it; subsequent calls are in-process no-ops.
+  await ensureReleaseContentType();
 
   const latest = await resolveLatest(slug);
 
@@ -118,13 +119,10 @@ export async function publish(
       publishedAt,
     });
   } catch (e) {
-    // Local snapshot is already on disk; surface to caller but don't crash.
-    console.error("[publish] createReleaseEntry failed:", e);
-    throw new Error(
-      `Snapshot written locally but Contentful Release entry creation failed: ${
-        e instanceof Error ? e.message : "unknown"
-      }`
-    );
+    // Local snapshot is on disk for forensics; surface the short reason.
+    const msg = e instanceof Error ? e.message : "unknown error";
+    console.error(`[publish] createReleaseEntry failed: ${msg}`);
+    throw new Error(msg);
   }
 
   return {

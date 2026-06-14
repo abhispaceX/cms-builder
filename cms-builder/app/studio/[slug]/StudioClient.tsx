@@ -12,35 +12,53 @@ import { SectionList } from "./_components/SectionList";
 import { PropEditor } from "./_components/PropEditor";
 import { LivePreview } from "./_components/LivePreview";
 import { PublishBar } from "./_components/PublishBar";
+import { StudioHeader } from "./_components/StudioHeader";
 
 interface Props {
   initialPage: Page;
   role: Role | null;
+  source: "release" | "contentful-page";
+  initialVersion: string | null;
 }
 
-export function StudioClient({ initialPage, role }: Props) {
+export function StudioClient({
+  initialPage,
+  role,
+  source,
+  initialVersion,
+}: Props) {
   const dispatch = useAppDispatch();
   const current = useAppSelector((s) => s.draftPage.page);
   const toasts = useAppSelector((s) => s.ui.toasts);
 
-  // Initialise the draft if (a) nothing is persisted, or (b) the persisted
-  // draft is for a different page than the one the URL refers to.
   React.useEffect(() => {
+    // Initialise when:
+    //   - there's no persisted draft, or
+    //   - the persisted draft belongs to a different pageId (different slug).
+    // We do NOT auto-reset on every revisit because that would clobber
+    // in-progress edits; the StudioHeader exposes an explicit "Reload from
+    // Contentful" button for that.
     if (!current || current.pageId !== initialPage.pageId) {
       dispatch(init(initialPage));
     }
   }, [dispatch, current, initialPage]);
 
-  // Mirror the cookie role into Redux so client-side UI can toggle controls.
   React.useEffect(() => {
     dispatch(setRole(role));
   }, [dispatch, role]);
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] flex-col">
+    <div className="flex h-[calc(100vh-3.5rem)] flex-col">
+      <StudioHeader
+        initialPage={initialPage}
+        source={source}
+        initialVersion={initialVersion}
+      />
       <div
-        className="grid flex-1 overflow-hidden"
-        style={{ gridTemplateColumns: "minmax(240px, 280px) 1fr minmax(280px, 340px)" }}
+        className="grid min-h-0 flex-1 overflow-hidden"
+        style={{
+          gridTemplateColumns: "minmax(260px, 300px) 1fr minmax(300px, 360px)",
+        }}
       >
         <SectionList />
         <LivePreview />
@@ -48,7 +66,6 @@ export function StudioClient({ initialPage, role }: Props) {
       </div>
       <PublishBar />
 
-      {/* Toast region — single live region announces new messages. */}
       <div
         aria-live="polite"
         aria-atomic="false"
@@ -63,7 +80,7 @@ export function StudioClient({ initialPage, role }: Props) {
               (t.level === "error"
                 ? "border-destructive/40 bg-destructive/10 text-destructive"
                 : t.level === "success"
-                  ? "border-green-500/40 bg-green-50 text-green-900"
+                  ? "border-emerald-500/40 bg-emerald-50 text-emerald-900"
                   : "border-muted bg-card")
             }
           >

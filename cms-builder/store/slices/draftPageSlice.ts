@@ -83,6 +83,26 @@ const draftPageSlice = createSlice({
       [list[idx], list[swap]] = [list[swap], list[idx]];
       state.dirty = true;
     },
+    reorderSections(
+      state,
+      action: PayloadAction<{ fromIndex: number; toIndex: number }>
+    ) {
+      if (!state.page) return;
+      const { fromIndex, toIndex } = action.payload;
+      const list = state.page.sections;
+      if (
+        fromIndex === toIndex ||
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= list.length ||
+        toIndex >= list.length
+      ) {
+        return;
+      }
+      const [moved] = list.splice(fromIndex, 1);
+      list.splice(toIndex, 0, moved);
+      state.dirty = true;
+    },
     updateProps(
       state,
       action: PayloadAction<{
@@ -125,6 +145,7 @@ export const {
   addSection,
   removeSection,
   moveSection,
+  reorderSections,
   updateProps,
   updatePageMeta,
   markSaved,

@@ -37,7 +37,10 @@ export async function POST(req: Request) {
     const result = await publish(slug, draft);
     return NextResponse.json(result);
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Publish failed";
+    // Compact one-line message only — the full stack stays on the server.
+    const raw = e instanceof Error ? e.message : "Publish failed";
+    const message = raw.split("\n")[0].slice(0, 300);
+    console.error("[POST /api/publish]", e);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

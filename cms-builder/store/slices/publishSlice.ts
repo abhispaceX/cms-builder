@@ -12,6 +12,8 @@ export type PublishStatus =
   | "succeeded"
   | "failed";
 
+export type SaveStatus = "idle" | "saving" | "saved" | "failed";
+
 export interface PublishResult {
   version: string;
   changes: string[];
@@ -23,12 +25,18 @@ export interface PublishState {
   status: PublishStatus;
   lastResult: PublishResult | null;
   error: string | null;
+  saveStatus: SaveStatus;
+  saveError: string | null;
+  lastSavedAt: number | null;
 }
 
 const initialState: PublishState = {
   status: "idle",
   lastResult: null,
   error: null,
+  saveStatus: "idle",
+  saveError: null,
+  lastSavedAt: null,
 };
 
 /**
@@ -46,10 +54,33 @@ export const publishDraft = createAsyncThunk<
     body: JSON.stringify({ slug, draft }),
   });
   if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    return rejectWithValue(text || `Publish failed: ${res.status}`);
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    const message =
+      body.error?.split("\n")[0].slice(0, 240) ??
+      `Publish failed (${res.status})`;
+    return rejectWithValue(message);
   }
   return (await res.json()) as PublishResult;
+});
+
+export const saveDraft = createAsyncThunk<
+  { savedAt: string },
+  { slug: string; draft: Page },
+  { rejectValue: string }
+>("publish/saveDraft", async ({ slug, draft }, { rejectWithValue }) => {
+  const res = await fetch("/api/save-draft", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ slug, draft }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    const message =
+      body.error?.split("\n")[0].slice(0, 240) ??
+      `Save failed (${res.status})`;
+    return rejectWithValue(message);
+  }
+  return (await res.json()) as { savedAt: string };
 });
 
 const publishSlice = createSlice({
@@ -59,6 +90,10 @@ const publishSlice = createSlice({
     clear(state) {
       state.status = "idle";
       state.error = null;
+    },
+    clearSave(state) {
+      state.saveStatus = "idle";
+      state.saveError = null;
     },
   },
   extraReducers: (builder) => {
@@ -77,9 +112,25 @@ const publishSlice = createSlice({
       .addCase(publishDraft.rejected, (state, action) => {
         state.status = "failed";
         state.error = action.payload ?? action.error.message ?? "Publish failed";
+      })
+      .addCase(saveDraft.pending, (state) => {
+        state.saveStatus = "saving";
+        state.saveError = null;
+      })
+      .addCase(
+        saveDraft.fulfilled,
+        (state, action: PayloadAction<{ savedAt: string }>) => {
+          state.saveStatus = "saved";
+          state.lastSavedAt = new Date(action.payload.savedAt).getTime();
+        }
+      )
+      .addCase(saveDraft.rejected, (state, action) => {
+        state.saveStatus = "failed";
+        state.saveError =
+          action.payload ?? action.error.message ?? "Save failed";
       });
   },
 });
 
-export const { clear } = publishSlice.actions;
+export const { clear, clearSave } = publishSlice.actions;
 export default publishSlice.reducer;
